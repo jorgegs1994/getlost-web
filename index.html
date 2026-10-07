@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GetLost — Digital guidebooks for hosts</title>
+<meta name="description" content="Your first guidebook is free, forever. One beautiful guidebook per property, with your name on it, open on every guest's phone before they land.">
+<meta name="theme-color" content="#040509">
+<meta property="og:title" content="GetLost — Let your guests get lost.">
+<meta property="og:description" content="Branded digital guidebooks for hosts and property managers. One link or QR per unit, no app for guests.">
+<meta property="og:image" content="assets/img/hero-coast.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/img/getlost-logo.png">
+<link rel="stylesheet" href="assets/vendor/leaflet.css">
+<link rel="stylesheet" href="assets/css/guest-guide.css?v=2">
+<link rel="preload" href="assets/fonts/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:'Plus Jakarta Sans';font-style:normal;font-weight:300 800;font-display:swap;src:url("assets/fonts/jakarta-latin.woff2") format('woff2')}
+@font-face{font-family:'Plus Jakarta Sans';font-style:italic;font-weight:400;font-display:swap;src:url("assets/fonts/jakarta-italic-latin.woff2") format('woff2')}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 600;font-display:swap;src:url("assets/fonts/jetbrains-mono-latin.woff2") format('woff2')}
+
+:root{--ink:#040509;--teal:#00a09a;--teal-deep:#007375;--teal-bright:#40dcd3;--paper:#e9e9f2}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ink);font-family:'Plus Jakarta Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+img{max-width:100%}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--teal-bright);outline-offset:3px;border-radius:4px}
+
+/* Each page is its own container so the design's cqw units and container queries work as drawn */
+.page{container-type:inline-size;min-height:100vh;overflow-x:clip}
+.page *{--gutter:max(clamp(20px,5.5cqw,96px),calc((100cqw - 1440px) / 2))}
+/* Full-bleed bordered grids on Features: keep their text on the same column as everything else */
+[data-page="features"] [data-hero]~div[style*="border-top:1px solid rgba(4,5,9,.09)"]{padding-inline:max(0px,calc(var(--gutter) - 44px))}
+.page[hidden]{display:none}
+.page [style*="display:grid"]>*{min-width:0}
+.page h1,.page h2,.page p,.page blockquote{overflow-wrap:break-word}
+
+@container (max-width:840px){
+[data-nav]{gap:10px !important;flex-wrap:nowrap !important}
+[data-dnav]{display:none !important}
+[data-mnav]{display:flex !important}
+}
+@container (max-width:760px){
+[data-hide-narrow]{display:none !important}
+[data-hero]{grid-template-columns:1fr !important}
+[data-moments]{grid-template-columns:1fr !important;grid-auto-rows:auto !important}
+[data-moments]>*{grid-column:auto !important;grid-row:auto !important;min-height:300px !important}
+[data-split]{grid-template-columns:1fr !important}
+[data-steps]{grid-template-columns:1fr !important}
+[data-pricing]{grid-template-columns:1fr !important}
+[data-hero2-phone]{position:static !important;transform:none !important;width:min(70%,260px) !important;margin:40px auto 0 !important;animation:none !important;display:block}
+[data-hero2-copy]{max-width:100% !important}
+[data-hero2]{min-height:0 !important;padding-bottom:0 !important}
+}
+@container (max-width:620px){
+[data-phone-mock]{width:min(68%,268px) !important}
+[data-cta]{width:100% !important;flex-direction:column;align-items:stretch}
+[data-cta]>*{width:100%;box-sizing:border-box;text-align:center}
+[data-metrics]>div{border-right:none !important;border-bottom:1px solid rgba(4,5,9,.07)}
+[data-hide-narrow-2]{display:none !important}
+}
+@container (max-width:900px){[data-pricing]{grid-template-columns:1fr !important}}
+@container (max-width:430px){[data-nav-cta]{display:none !important}}
+
+/* Sticky nav */
+nav[data-nav-wrap]{position:sticky;top:0;z-index:20;transition:background .25s,backdrop-filter .25s,box-shadow .25s}
+[data-page="home"] nav[data-nav-wrap].scrolled,[data-page="guidebook"] nav[data-nav-wrap].scrolled{background:rgba(4,5,9,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 1px 0 rgba(255,255,255,.08)}
+[data-page="features"] nav[data-nav-wrap],[data-page="pricing"] nav[data-nav-wrap]{background:rgba(255,255,255,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+[data-mnav]{background:transparent;padding:0}
+
+/* Interactive affordances */
+[data-dnav] a{position:relative;transition:color .15s,opacity .15s}
+[data-dnav] a:hover{opacity:1;color:currentColor;filter:brightness(1.4)}
+[data-dnav] a[aria-current]{color:#40dcd3 !important}
+[data-page="features"] [data-dnav] a[aria-current],[data-page="pricing"] [data-dnav] a[aria-current]{color:var(--teal) !important;font-weight:700}
+[data-page="features"] [data-dnav] a:hover,[data-page="pricing"] [data-dnav] a:hover{color:var(--teal-deep) !important;filter:none}
+[data-action="start"],[data-action="example"],[data-action="signin"]{display:inline-block;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,filter .18s ease,background-color .18s}
+[data-action="start"]:hover{transform:translateY(-1px);filter:brightness(1.07);box-shadow:0 10px 24px rgba(0,160,154,.28)}
+[data-action="example"]:hover{background:rgba(255,255,255,.08)}
+[data-action]:active{transform:translateY(0) scale(.98)}
+.block-btn{display:block !important}
+footer a:hover,.page a[style*="12.5px"]:hover{color:#fff !important}
+
+[data-moments]>div{transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+[data-moments]>div:hover{transform:scale(1.012)}
+[data-hero2-phone]{animation:gl-float 7s ease-in-out infinite}
+@keyframes gl-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+
+/* Pricing */
+.billing-toggle button{border:0;background:transparent;font:600 12.5px/1 'Plus Jakarta Sans',sans-serif;color:#6a6e77;padding:9px 16px;border-radius:30px;transition:all .2s}
+.billing-toggle button[aria-selected="true"]{color:var(--ink);background:#fff;box-shadow:0 1px 3px rgba(4,5,9,.12)}
+.billing-toggle em{font-style:normal;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--teal-deep);margin-left:4px}
+[data-plan-card]{transition:opacity .3s,transform .3s,box-shadow .3s}
+.page [data-plan-card].dim{opacity:.6;transform:scale(.97)}
+.page [data-plan-card="monthly"].active{box-shadow:0 0 0 2px var(--teal),0 20px 44px rgba(4,5,9,.14)}
+details.faq{border-top:1px solid rgba(4,5,9,.1);padding-top:18px}
+details.faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+details.faq summary::-webkit-details-marker{display:none}
+details.faq summary::after{content:"+";font:400 18px/1 'JetBrains Mono',monospace;color:var(--teal);transition:transform .2s}
+details.faq[open] summary::after{transform:rotate(45deg)}
+
+/* Reveal on scroll */
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* Mobile menu */
+.drawer{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;background:var(--ink);color:#fff;padding:22px 18px 32px;transform:translateY(-100%);transition:transform .35s cubic-bezier(.2,.7,.2,1);visibility:hidden}
+.drawer.open{transform:none;visibility:visible}
+.drawer-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px}
+.drawer-top img{height:28px}
+.icon-btn{width:44px;height:44px;border-radius:9px;border:1px solid rgba(255,255,255,.24);background:transparent;display:grid;place-items:center;font-size:22px;line-height:1}
+.drawer nav a{display:block;font:800 clamp(32px,9vw,44px)/1.15 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.drawer nav a:hover{color:var(--teal-bright)}
+.drawer .drawer-cta{margin-top:auto;display:grid;gap:12px}
+.drawer .drawer-cta a{text-align:center;font:600 15px/1 'Plus Jakarta Sans',sans-serif;padding:18px;border-radius:40px}
+
+/* Modals */
+dialog{border:0;padding:0;border-radius:20px;max-width:min(460px,calc(100vw - 32px));width:100%;box-shadow:0 40px 100px rgba(4,5,9,.5);color:var(--ink)}
+dialog::backdrop{background:rgba(4,5,9,.6);backdrop-filter:blur(6px)}
+dialog[open]{animation:pop .25s cubic-bezier(.2,.7,.2,1)}
+@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.98)}}
+.modal{padding:32px 30px 30px;position:relative}
+.modal .close{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:0;background:#f0f1f3;font-size:18px}
+.eyebrow{font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:var(--teal-deep);margin-bottom:14px;text-transform:uppercase}
+.modal h3{font:800 28px/1.05 'Plus Jakarta Sans',sans-serif;letter-spacing:-.035em;margin:0 0 10px}
+.modal p{font:400 14.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0 0 22px}
+.field{display:grid;gap:7px;margin-bottom:14px}
+.field label{font:600 12.5px/1 'Plus Jakarta Sans',sans-serif}
+.field input,.field select{font:400 15px/1 'Plus Jakarta Sans',sans-serif;padding:14px 14px;border-radius:10px;border:1.5px solid rgba(4,5,9,.14);background:#fff;color:var(--ink);width:100%}
+.field input:focus,.field select:focus{outline:none;border-color:var(--teal)}
+.plan-pick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}
+.plan-pick label{border:1.5px solid rgba(4,5,9,.14);border-radius:10px;padding:12px;cursor:pointer;font:600 13px/1.3 'Plus Jakarta Sans',sans-serif}
+.plan-pick label span{display:block;font:400 11.5px/1.3 'JetBrains Mono',monospace;color:#6a6e77;margin-top:4px}
+.plan-pick input{position:absolute;opacity:0}
+.plan-pick label:has(input:checked){border-color:var(--teal);background:#f2fbfa}
+.submit{width:100%;border:0;font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:var(--ink);background:var(--teal-bright);padding:17px;border-radius:40px;margin-top:6px;transition:filter .15s}
+.submit:hover{filter:brightness(1.06)}
+.fine{font:400 11.5px/1.5 'JetBrains Mono',monospace !important;color:#8b8f99 !important;margin:14px 0 0 !important;text-align:center}
+.success{text-align:center;padding:10px 0}
+.success .tick{width:56px;height:56px;border-radius:50%;background:var(--teal-bright);display:grid;place-items:center;margin:0 auto 18px;font-size:26px}
+.qr-big{display:block;width:240px;height:240px;margin:6px auto 18px;border-radius:12px}
+.modal.center{text-align:center}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:#fff;color:var(--ink);font:500 13.5px/1.4 'Plus Jakarta Sans',sans-serif;padding:12px 18px;border-radius:40px;box-shadow:0 12px 40px rgba(4,5,9,.3);opacity:0;pointer-events:none;transition:all .25s;z-index:60;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* Clickable moments */
+[data-go]{cursor:pointer}
+[data-go]::after{content:"Open in sample guidebook →";position:absolute;right:20px;top:18px;font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.1em;color:#040509;background:#40dcd3;padding:7px 10px;border-radius:20px;opacity:0;transform:translateY(-4px);transition:all .25s}
+[data-go]:hover::after,[data-go]:focus-visible::after{opacity:1;transform:none}
+@media (hover:none){[data-go]::after{opacity:1;transform:none;content:"Open →"}}
+
+/* Pricing calculator */
+.calc-slider label{display:block;font:800 clamp(22px,2.6cqw,30px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff;margin-bottom:18px}
+.calc-slider label span{color:#40dcd3}
+.calc-slider input{width:100%;accent-color:#40dcd3;height:28px;cursor:pointer}
+.calc-scale{display:flex;justify-content:space-between;font:400 11px/1 'JetBrains Mono',monospace;color:rgba(255,255,255,.4);margin-top:6px}
+.calc-results{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:30px}
+.calc-tile{border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:22px 24px;transition:all .25s}
+.calc-tile.active{background:#40dcd3;border-color:#40dcd3}
+.calc-tile.active .calc-k,.calc-tile.active .calc-v,.calc-tile.active .calc-sub,.calc-tile.active small{color:#040509}
+.calc-tile.save{background:rgba(64,220,211,.08);border-color:rgba(64,220,211,.3)}
+.calc-k{font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.55);margin-bottom:12px}
+.calc-v{font:800 clamp(30px,3.4cqw,42px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;color:#fff;font-variant-numeric:tabular-nums}
+.calc-v small{font:600 14px/1 'Plus Jakarta Sans',sans-serif;letter-spacing:0;color:rgba(255,255,255,.6)}
+.calc-sub{font:400 12px/1.5 'JetBrains Mono',monospace;color:rgba(255,255,255,.5);margin-top:10px}
+
+/* Sample guidebook page */
+.gb-page{position:relative;padding:clamp(30px,5cqw,70px) var(--gutter) clamp(60px,7cqw,100px);color:#fff}
+.gb-grid{position:relative;display:grid;grid-template-columns:1fr minmax(320px,400px);gap:clamp(30px,6cqw,90px);align-items:center;max-width:1200px;margin:0 auto}
+@container (max-width:820px){.gb-grid{grid-template-columns:1fr;gap:26px}.gb-intro{display:contents}.gb-intro>*{margin-bottom:0 !important}.gb-device{order:1}.gb-controls{order:2}.gb-actions{order:3}.gb-note{order:4;margin:0 !important}}
+.gb-eyebrow{display:inline-flex;align-items:center;gap:10px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:24px}
+.gb-eyebrow span{width:28px;height:1px;background:#40dcd3}
+.gb-intro h1{font:800 clamp(38px,5.6cqw,76px)/.96 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;margin:0 0 22px;text-wrap:balance}
+.gb-lede{font:400 clamp(15px,1.4cqw,18px)/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.7);margin:0 0 32px;max-width:500px}
+.gb-controls{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);border-radius:18px;padding:22px;margin-bottom:26px;max-width:540px}
+.gb-label{font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.5);margin-bottom:14px}
+.gb-actions{display:flex;flex-wrap:wrap;gap:12px}
+.gb-btn{font:600 15px/1 'Plus Jakarta Sans',sans-serif;padding:17px 26px;border-radius:40px}
+.gb-btn.primary{background:#40dcd3;color:#040509}
+.gb-btn.ghost{border:1.5px solid rgba(255,255,255,.3);color:#fff}
+.gb-note{font:400 12px/1.6 'JetBrains Mono',monospace;color:rgba(255,255,255,.4);margin:18px 0 0}
+
+.gb-device{display:flex;justify-content:center}
+.gb-phone{position:relative;width:min(100%,390px);height:min(820px,calc(100svh - 110px));min-height:640px;border-radius:54px;padding:11px;background:linear-gradient(145deg,#2b2d33,#0b0c10);box-shadow:0 0 0 1.5px #3a3d45,0 50px 100px rgba(0,0,0,.6)}
+.gb-screen{height:100%;border-radius:43px}
+@container (max-width:520px){.gb-phone{height:720px;min-height:0;border-radius:46px}.gb-screen{border-radius:35px}}
+.gb-try{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.gb-try button{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.14);background:transparent;border-radius:11px;padding:11px 12px;font:600 13px/1.25 'Plus Jakarta Sans',sans-serif;color:#fff;text-align:left;transition:border-color .2s,background .2s}
+.gb-try button:hover{border-color:#40dcd3;background:rgba(64,220,211,.08)}
+.gb-try i{font-style:normal;flex:none;width:24px;height:24px;border-radius:7px;background:rgba(64,220,211,.14);color:#40dcd3;display:grid;place-items:center;font:600 12px/1 'JetBrains Mono',monospace}
+.gb-flabel{font:600 12px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.7)}
+.gb-notch{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:110px;height:31px;border-radius:20px;background:#000;z-index:10;pointer-events:none}
+
+.skip{position:absolute;left:12px;top:-60px;z-index:100;background:#40dcd3;color:#040509;font:600 14px/1 'Plus Jakarta Sans',sans-serif;padding:12px 16px;border-radius:8px}
+.skip:focus{top:12px}
+
+/* Free first guidebook */
+.free-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:22px 28px;border-radius:16px;border:1.5px dashed rgba(64,220,211,.55);background:rgba(64,220,211,.06)}
+.free-k{font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:8px}
+.free-v{font:800 clamp(30px,3.2cqw,44px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;color:#fff}
+.free-v span{font:600 15px/1 'Plus Jakarta Sans',sans-serif;letter-spacing:0;color:rgba(255,255,255,.6)}
+.free-btn{font:600 14px/1 'Plus Jakarta Sans',sans-serif;color:#040509;background:#fff;padding:14px 20px;border-radius:40px;white-space:nowrap}
+.free-btn.dark{background:#040509;color:#fff;padding:16px 24px}
+.free-strip{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px 30px;padding:26px 30px;border-radius:14px;background:linear-gradient(120deg,#40dcd3,#00bab3);color:#040509}
+.free-strip .free-k{color:#040509;opacity:.7}
+.free-strip-v{font:800 clamp(30px,3.4cqw,42px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.035em}
+.free-strip-v span{font:600 16px/1 'Plus Jakarta Sans',sans-serif;letter-spacing:0;opacity:.75}
+.free-strip p{font:400 13.5px/1.55 'Plus Jakarta Sans',sans-serif;margin:10px 0 0;max-width:420px;opacity:.85}
+.calc-split{font:500 12px/1 'JetBrains Mono',monospace;color:#40dcd3;margin:14px 0 0}
+.plan-label{font:600 12.5px/1.3 'Plus Jakarta Sans',sans-serif}
+.plan-label em{font-style:normal;font-weight:400;color:#8b8f99}
+
+/* QR codes only make sense when the visitor is on a bigger screen */
+.no-qr{display:none !important}
+@media (max-width:640px){.qr-only{display:none !important}.no-qr{display:inline-block !important}}
+
+@media (prefers-reduced-motion:reduce){
+*,*::before,*::after{animation:none !important;transition:none !important}
+html{scroll-behavior:auto}
+.reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main-content" data-skip>Skip to content</a>
+
+<main class="page" data-page="home" data-title="GetLost — Digital guidebooks for hosts" style="background:#040509" hidden>
+<nav data-nav-wrap><div data-nav="" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:22px var(--gutter);position:relative;z-index:3">
+<div style="display:flex;align-items:center;gap:11px"><a href="#/" aria-label="GetLost home"><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:28px;width:auto;display:block"></a></div>
+<button type="button" data-mnav="" data-action="menu" aria-label="Open menu" style="display:none;order:9;align-items:center;justify-content:center;flex-direction:column;gap:4px;width:44px;height:44px;border:1px solid rgba(255,255,255,.24);border-radius:9px">
+<div style="width:17px;height:1.5px;background:#fff"></div><div style="width:17px;height:1.5px;background:#fff"></div><div style="width:17px;height:1.5px;background:#fff"></div>
+</button>
+<div data-dnav="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 28px;font:500 13px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.7)"><a href="#/features" data-link="Features">Features</a><a href="#/pricing" data-link="Pricing">Pricing</a><a href="#/guidebook" data-link="Live example">Live example</a></div>
+<div style="display:flex;align-items:center;gap:12px">
+<a href="#" data-action="signin" data-dnav="" style="font:600 13px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.8)">Sign in</a>
+<a href="#" data-action="start" data-nav-cta="" style="font:600 13px/1 'Plus Jakarta Sans',sans-serif;color:#040509;background:#40dcd3;padding:12px 18px;border-radius:40px;white-space:nowrap">Start for free</a>
+</div>
+</div></nav>
+<div data-hero2="" style="position:relative;overflow:hidden;padding:clamp(40px,6cqw,90px) var(--gutter) 0;min-height:clamp(520px,58cqw,760px)">
+<div style="position:absolute;inset:0;background:url(&quot;assets/img/hero-coast.jpg&quot;) center 40%/cover;opacity:.32"></div>
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,5,9,.35) 0%,rgba(4,5,9,.1) 40%,#040509 100%)"></div>
+<div data-hero2-copy="" style="position:relative;z-index:2;max-width:min(760px,calc(100% - min(29cqw,360px) - 90px))">
+<div style="display:inline-flex;align-items:center;gap:10px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:28px"><span style="width:28px;height:1px;background:#40dcd3"></span>DIGITAL GUIDEBOOKS FOR HOSTS</div>
+<h1 style="font:800 clamp(44px,7.8cqw,104px)/.94 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;color:#fff;margin:0 0 26px;text-wrap:balance">Let your guests<br>get lost.</h1>
+<p style="font:400 clamp(16px,1.7cqw,22px)/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.72);margin:0 0 36px;max-width:520px;text-wrap:pretty">In the city — never in your check-in instructions. One beautiful guidebook per property, with your name on it, open on every guest's phone before they land.</p>
+<div data-cta="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px">
+<a href="#" data-action="start" style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:#040509;background:#40dcd3;padding:18px 30px;border-radius:40px">Create your free guidebook</a>
+<a href="#/guidebook" style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:#fff;border:1.5px solid rgba(255,255,255,.3);padding:16.5px 26px;border-radius:40px">See a live guidebook</a>
+</div>
+<div style="font:400 12px/1.6 'JetBrains Mono',monospace;color:rgba(255,255,255,.45);margin-top:22px">First guidebook free, forever · then €5.99/mo yearly or €7.99/mo monthly · ~15 min to publish</div>
+</div>
+<img data-hero2-phone="" src="assets/img/guidebook-mobile.avif" alt="Guest guidebook on mobile" style="position:absolute;right:var(--gutter);bottom:-4%;width:min(29cqw,360px);height:auto;filter:drop-shadow(0 40px 70px rgba(0,0,0,.55));z-index:2">
+</div>
+
+<div style="height:1px;background:rgba(255,255,255,.08)"></div>
+
+<div id="moments" style="padding:clamp(60px,8cqw,120px) var(--gutter) clamp(40px,5cqw,70px);background:#040509">
+<div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:20px 40px;margin-bottom:clamp(30px,4cqw,54px)">
+<h2 style="font:800 clamp(30px,4.6cqw,64px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;color:#fff;margin:0;max-width:720px;text-wrap:balance">A stay has three moments.<br>Be there for all of them.</h2>
+<div style="font:400 14px/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55);max-width:300px">Arrival, the house, the neighbourhood. Your guidebook is there for each — so guests feel looked after, not left reading a PDF.</div>
+</div>
+<div data-moments="" data-reveal style="display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:clamp(150px,13cqw,180px);gap:14px">
+<div data-go="#/guidebook/arrival" tabindex="0" role="link" style="grid-column:span 7;grid-row:span 2;position:relative;border-radius:18px;overflow:hidden;background:url(&quot;assets/img/moment-arrival.jpg&quot;) center/cover">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,5,9,.35) 0%,rgba(4,5,9,0) 28%,rgba(4,5,9,.88) 100%)"></div>
+<div style="position:absolute;top:22px;left:22px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#fff;white-space:nowrap">01 — ARRIVAL</div>
+<div style="position:absolute;left:22px;right:22px;bottom:22px">
+<div style="font:800 clamp(24px,2.6cqw,36px)/1.05 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff;margin-bottom:12px">They find the door before they find your number.</div>
+<div style="display:inline-flex;align-items:center;gap:10px;background:rgba(255,255,255,.12);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px 14px"><span style="font:500 10px/1 'JetBrains Mono',monospace;color:rgba(255,255,255,.6)">KEYBOX</span><span style="font:700 14px/1 'Plus Jakarta Sans',sans-serif;color:#fff">4417</span><span style="width:1px;height:14px;background:rgba(255,255,255,.25)"></span><span style="font:500 12px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.8)">Left of the green gate</span></div>
+</div>
+</div>
+<div data-go="#/guidebook/house" tabindex="0" role="link" style="grid-column:span 5;grid-row:span 1;position:relative;border-radius:18px;overflow:hidden;background:url(&quot;assets/img/moment-house.jpg&quot;) center/cover">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,5,9,.4),rgba(4,5,9,.05) 35%,rgba(4,5,9,.85))"></div>
+<div style="position:absolute;top:20px;left:20px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#fff;white-space:nowrap">02 — THE HOUSE</div>
+<div style="position:absolute;left:20px;right:20px;bottom:20px;font:800 clamp(20px,2cqw,28px)/1.08 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff">WiFi, boiler, bins — answered before anyone asks.</div>
+</div>
+<div data-go="#/guidebook/around" tabindex="0" role="link" style="grid-column:span 5;grid-row:span 1;position:relative;border-radius:18px;overflow:hidden;background:url(&quot;assets/img/moment-neighbourhood.png&quot;) center/cover">
+<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(4,5,9,.45),rgba(4,5,9,.1) 35%,rgba(4,5,9,.86))"></div>
+<div style="position:absolute;top:20px;left:20px;font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#fff;white-space:nowrap">03 — NEIGHBOURHOOD</div>
+<div style="position:absolute;left:20px;right:20px;bottom:20px;font:800 clamp(20px,2cqw,28px)/1.08 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff">Your picks, with walking times from their front door.</div>
+</div>
+</div>
+</div>
+
+<div style="background:#e9e9f2;padding:clamp(60px,8cqw,120px) var(--gutter)">
+<div data-split="" style="display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,5cqw,80px);align-items:center">
+<div>
+<div style="font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#007375;margin-bottom:22px">GUESTS SEE YOUR NAME. NOT OURS.</div>
+<h2 style="font:800 clamp(34px,5cqw,72px)/.98 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;color:#040509;margin:0 0 24px;text-wrap:balance">Look like the host they'll tell their friends about.</h2>
+<p style="font:400 clamp(15px,1.4cqw,18px)/1.6 'Plus Jakarta Sans',sans-serif;color:#3a3d45;margin:0 0 30px;max-width:480px;text-wrap:pretty">A paper binder says "rental". A guidebook with your logo on the cover, your voice in the recommendations and your photo of the view says "someone cares about this place". Guests notice. Reviews follow.</p>
+<div style="display:flex;flex-direction:column;gap:12px;max-width:440px">
+<div style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;background:#fff;border-radius:12px"><div style="width:6px;height:6px;border-radius:50%;background:#00a09a;flex:none;margin-top:7px"></div><div style="font:500 14.5px/1.45 'Plus Jakarta Sans',sans-serif;color:#040509">Your logo on the cover, your photos throughout</div></div>
+<div style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;background:#fff;border-radius:12px"><div style="width:6px;height:6px;border-radius:50%;background:#00a09a;flex:none;margin-top:7px"></div><div style="font:500 14.5px/1.45 'Plus Jakarta Sans',sans-serif;color:#040509">Opens from a link or QR — no app, no login</div></div>
+<div style="display:flex;gap:14px;align-items:flex-start;padding:16px 18px;background:#fff;border-radius:12px"><div style="width:6px;height:6px;border-radius:50%;background:#00a09a;flex:none;margin-top:7px"></div><div style="font:500 14.5px/1.45 'Plus Jakarta Sans',sans-serif;color:#040509">Edit anytime; guests always see the latest version</div></div>
+</div>
+</div>
+<div style="position:relative;display:flex;align-items:center;justify-content:center;min-width:0">
+<img data-hide-narrow-2="" src="assets/img/guidebook-laptop.avif" alt="Guest guidebook on desktop" style="position:relative;width:min(78%,520px);height:auto;margin-right:-10%;filter:drop-shadow(0 30px 60px rgba(4,5,9,.25))">
+<img data-phone-mock="" src="assets/img/guidebook-mobile.avif" alt="Guest guidebook on mobile" style="position:relative;width:min(32%,210px);height:auto;filter:drop-shadow(0 30px 60px rgba(4,5,9,.3))">
+</div>
+</div>
+</div>
+
+<div style="background:#fff;padding:clamp(60px,8cqw,120px) var(--gutter)">
+<div style="font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#007375;margin-bottom:22px">FIFTEEN MINUTES, START TO FINISH</div>
+<h2 style="font:800 clamp(34px,5cqw,72px)/.98 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;color:#040509;margin:0 0 clamp(36px,5cqw,70px);max-width:800px;text-wrap:balance">Fifteen minutes from blank page to published.</h2>
+<div data-steps="" style="display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,3cqw,40px)">
+<div style="border-top:2px solid #040509;padding-top:24px">
+<div style="font:800 clamp(56px,7cqw,96px)/.9 'Plus Jakarta Sans',sans-serif;letter-spacing:-.05em;color:#040509;margin-bottom:22px">01</div>
+<div style="font:700 20px/1.25 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:10px">Answer the questions once</div>
+<p style="font:400 14.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0">Check-in, WiFi, appliances, house rules. Paste what you already send guests — we shape it.</p>
+</div>
+<div style="border-top:2px solid #040509;padding-top:24px">
+<div style="font:800 clamp(56px,7cqw,96px)/.9 'Plus Jakarta Sans',sans-serif;letter-spacing:-.05em;color:#040509;margin-bottom:22px">02</div>
+<div style="font:700 20px/1.25 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:10px">Drop in your favourite places</div>
+<p style="font:400 14.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0">The bakery, the quiet beach, the bar with the good vermouth. Walking times are measured from the front door.</p>
+</div>
+<div style="border-top:2px solid #040509;padding-top:24px">
+<div style="font:800 clamp(56px,7cqw,96px)/.9 'Plus Jakarta Sans',sans-serif;letter-spacing:-.05em;color:#040509;margin-bottom:22px">03</div>
+<div style="font:700 20px/1.25 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:10px">Share one link</div>
+<p style="font:400 14.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0">Paste it into your booking messages or print the QR by the door. Guests open it in their browser, nothing to install.</p>
+</div>
+</div>
+</div>
+
+<div style="background:#040509;padding:clamp(60px,8cqw,120px) var(--gutter)">
+<div data-pricing="" style="display:grid;grid-template-columns:1fr minmax(300px,.9fr);gap:clamp(30px,5cqw,80px);align-items:center">
+<div>
+<div style="font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:22px">PRICING</div>
+<h2 style="font:800 clamp(34px,5cqw,72px)/.98 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;color:#fff;margin:0 0 20px;text-wrap:balance">Less than one coffee per guest.</h2>
+<p style="font:400 clamp(15px,1.4cqw,18px)/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.62);margin:0;max-width:440px">Your first guidebook is free, forever. After that, pay per guidebook — monthly with no commitment, or yearly for the lower rate.</p>
+</div>
+<div style="display:grid;gap:14px">
+<div class="free-row">
+<div><div class="free-k">YOUR FIRST GUIDEBOOK</div><div class="free-v">Free<span>, forever</span></div></div>
+<a href="#" data-action="start" class="free-btn">Start for free</a>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:26px 28px;border-radius:16px;background:#40dcd3">
+<div><div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#040509;opacity:.7;margin-bottom:8px">YEARLY</div><div style="font:800 clamp(38px,4cqw,56px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;color:#040509">€5.99<span style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;letter-spacing:0;opacity:.7"> /mo</span></div></div>
+<div style="font:500 12px/1.5 'Plus Jakarta Sans',sans-serif;color:#040509;opacity:.75;text-align:right;white-space:nowrap">per extra guidebook<br>billed yearly</div>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:26px 28px;border-radius:16px;border:1px solid rgba(255,255,255,.18)">
+<div><div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.55);margin-bottom:8px">MONTHLY</div><div style="font:800 clamp(38px,4cqw,56px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.04em;color:#fff">€7.99<span style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;letter-spacing:0;color:rgba(255,255,255,.6)"> /mo</span></div></div>
+<div style="font:500 12px/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.6);text-align:right;white-space:nowrap">per extra guidebook<br>cancel anytime</div>
+</div>
+</div>
+</div>
+</div>
+
+<div style="padding:clamp(60px,8cqw,110px) var(--gutter);background:#040509;border-top:1px solid rgba(255,255,255,.08)">
+<div style="max-width:900px;margin:0 auto;text-align:center">
+<div style="font:500 10.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:28px">FROM ONE OF OUR PILOT MANAGERS</div>
+<blockquote data-reveal-quote style="font:700 clamp(24px,3.4cqw,44px)/1.22 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff;margin:0 0 32px;text-wrap:balance">“The properties I manage stand out right away. Guests message to say thanks — and I'm seeing it in the reviews.”</blockquote>
+<div style="display:flex;align-items:center;justify-content:center;gap:12px">
+<div style="width:42px;height:42px;background:url(&quot;assets/img/avatar-ilse.png&quot;) center/cover no-repeat;border-radius:100%;border:2px solid rgba(64,220,211,.5)"></div>
+<div style="text-align:left"><div style="font:700 14px/1.2 'Plus Jakarta Sans',sans-serif;color:#fff">Ilse Wissink</div><div style="font:400 12px/1.3 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55)">Superhost · Netherlands</div></div>
+</div>
+</div>
+</div>
+
+<div id="scan" style="position:relative;overflow:hidden;background:#007375;padding:clamp(60px,8cqw,120px) var(--gutter)">
+<div style="position:absolute;right:-10%;top:-30%;width:min(700px,80cqw);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(64,220,211,.22),rgba(64,220,211,0) 65%)"></div>
+<div data-split="" style="position:relative;display:grid;grid-template-columns:1fr auto;gap:clamp(30px,5cqw,80px);align-items:center">
+<div>
+<h2 style="font:800 clamp(38px,6cqw,88px)/.95 'Plus Jakarta Sans',sans-serif;letter-spacing:-.045em;color:#fff;margin:0 0 22px;text-wrap:balance"><span class="qr-only">Don't take our word for it. Scan it.</span><span class="no-qr">Don't take our word for it. Try it.</span></h2>
+<p style="font:400 clamp(15px,1.4cqw,18px)/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.8);margin:0 0 34px;max-width:480px">This is exactly what your guests would see — a live guidebook, on your phone, in ten seconds.</p>
+<div data-cta="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px">
+<a href="#" data-action="start" style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:#007375;background:#fff;padding:18px 30px;border-radius:40px">Create your free guidebook</a>
+<a href="#/guidebook" class="no-qr" style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:#fff;border:1.5px solid rgba(255,255,255,.45);padding:16.5px 26px;border-radius:40px">Open the sample guidebook</a>
+</div>
+</div>
+<div class="qr-only" style="background:#fff;border-radius:20px;padding:22px;display:flex;flex-direction:column;align-items:center;gap:14px;width:224px;flex:none;box-sizing:border-box;box-shadow:0 30px 70px rgba(4,5,9,.35)">
+<img src="assets/img/qr-code.png" alt="Guidebook QR code" style="width:180px;height:180px;border-radius:8px">
+<div style="font:500 9.5px/1.5 'JetBrains Mono',monospace;letter-spacing:.12em;color:#6a6e77;text-align:center;white-space:nowrap">SCAN FOR A LIVE<br>GUEST GUIDEBOOK</div>
+</div>
+</div>
+</div>
+
+<div style="padding:clamp(26px,3.4cqw,44px) var(--gutter);background:#040509;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:30px 60px;border-top:1px solid rgba(255,255,255,.08)">
+<div><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:26px;width:auto;display:block;margin-bottom:14px"><div style="font:400 12.5px/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.45)">Digital guidebooks for busy hosts.</div></div>
+<div style="display:flex;flex-wrap:wrap;gap:26px 64px">
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">PRODUCT</span><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Guest guidebooks</a><a href="#/" data-scroll="moments" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Local recommendations</a><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Check-in &amp; house rules</a></div>
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">COMPANY</span><a href="#/pricing" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Pricing</a><a href="mailto:hello@getlost.me" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Contact</a><a href="#" data-action="privacy" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Privacy</a></div>
+</div>
+</div>
+
+</main>
+
+<main class="page" data-page="features" data-title="Features — GetLost" style="background:#fff" hidden>
+<nav data-nav-wrap><div data-nav="" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:20px var(--gutter);border-bottom:1px solid rgba(4,5,9,.08)">
+<div style="display:flex;align-items:center;gap:11px">
+<a href="#/" aria-label="GetLost home"><img src="assets/img/getlost-logo.png" alt="GetLost" style="height:28px;width:auto;display:block"></a>
+</div>
+<button type="button" data-mnav="" data-action="menu" aria-label="Open menu" style="display:none;order:9;align-items:center;justify-content:center;flex-direction:column;gap:4px;width:44px;height:44px;border:1px solid rgba(4,5,9,.14);border-radius:9px">
+<div style="width:17px;height:1.5px;background:#040509"></div><div style="width:17px;height:1.5px;background:#040509"></div><div style="width:17px;height:1.5px;background:#040509"></div>
+</button>
+<div data-dnav="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;font:500 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#3a3d45"><a href="#/features" data-link="Product" style="color:#00a09a;font-weight:700">Product</a><a href="#/" data-link="For managers">For managers</a><a href="#/pricing" data-link="Pricing">Pricing</a><a href="#/" data-scroll="moments" data-link="Guest experience">Guest experience</a></div>
+<div style="display:flex;align-items:center;gap:18px"><a href="#" data-action="signin" data-dnav="" style="font:600 13.5px/1 \'Plus Jakarta Sans\',sans-serif;color:#040509">Sign in</a><a href="#" data-action="start" style="font:600 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#fff;background:#040509;padding:11px 18px;border-radius:7px;white-space:nowrap" data-nav-cta="">Start for free</a></div>
+</div></nav>
+<div style="padding:clamp(40px,5cqw,66px) var(--gutter) clamp(36px,4cqw,52px);display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));gap:clamp(30px,4cqw,56px);align-items:center;background:linear-gradient(180deg,#fff,#f7f9f9)" data-hero="">
+<div>
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#00a09a;margin-bottom:18px">What's inside</div>
+<h1 style="font:700 clamp(30px,3.9cqw,48px)/1.06 'Plus Jakarta Sans',sans-serif;letter-spacing:-.028em;color:#040509;margin:0 0 18px;text-wrap:pretty">Two products, really. One for you, one for your guest.</h1>
+<p style="font:400 clamp(15px,1.32cqw,16.5px)/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0;max-width:520px">A manager's workspace where content is written once, and a guest guidebook that opens instantly on any phone — no app required.</p>
+</div>
+<div style="display:flex;align-items:center;justify-content:center;min-width:0">
+<img data-hide-narrow="" src="assets/img/guidebook-laptop.avif" alt="Guest guidebook on desktop" style="width:min(76%,420px);height:auto;margin-right:-10%;filter:drop-shadow(0 18px 36px rgba(4,5,9,.2))">
+<img data-phone-mock="" src="assets/img/guidebook-mobile.avif" alt="Guest guidebook on mobile" style="width:min(34%,190px);height:auto;filter:drop-shadow(0 20px 44px rgba(4,5,9,.28))">
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));border-top:1px solid rgba(4,5,9,.09)">
+<div style="padding:clamp(24px,3.4cqw,44px);border-right:1px solid rgba(4,5,9,.09)">
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:#8b8f99;margin-bottom:22px">FOR THE MANAGER</div>
+<div style="display:flex;flex-direction:column;gap:24px">
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">One editor for every property</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Set up check-in, WiFi, house rules and recommendations once per property, in a simple editor.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">Always current</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Update a detail — a new door code, a closed restaurant — and guests see the change immediately. No reprinting, no outdated PDFs.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">Shared recommendation library</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Your local picks live in one place and attach to any unit nearby, with walking times measured from that unit's front door.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">One link or QR per unit</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Share it through your OTA messages, PMS automations, or a printed code by the door.</div></div>
+</div>
+</div>
+<div style="padding:clamp(24px,3.4cqw,44px);background:#fafbfb">
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:#8b8f99;margin-bottom:22px">FOR THE GUEST</div>
+<div style="display:flex;flex-direction:column;gap:24px">
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">Opens in a tap, no app</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">A link or a QR by the door. Works on the plane too — the arrival section stays readable offline once it's been opened.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">Everything in one place</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Check-in steps, WiFi, house rules and local picks, all in a single guidebook instead of scattered messages.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">Answers before the question</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">WiFi you can copy with one tap, the hob explained, checkout steps timed to their departure — so your phone stays quiet.</div></div>
+<div><div style="font:700 17px/1.3 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:7px">A local's list, not a top-10</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Your picks on a map, with the caveats that matter: closed Mondays, cash only, go before nine.</div></div>
+</div>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));border-top:1px solid rgba(4,5,9,.09);background:#fff">
+<div style="padding:34px clamp(20px,3.1cqw,40px) 40px;border-right:1px solid rgba(4,5,9,.09)"><div style="font:600 11px/1 'JetBrains Mono',monospace;color:#00a09a;margin-bottom:14px">FITS YOUR STACK</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Paste the link into your OTA message templates and PMS automations. Nothing to migrate, nothing to break.</div></div>
+<div style="padding:34px clamp(20px,3.1cqw,40px) 40px;border-right:1px solid rgba(4,5,9,.09)"><div style="font:600 11px/1 'JetBrains Mono',monospace;color:#00a09a;margin-bottom:14px">MEASURABLE</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">See which sections guests actually open, per unit — and which recommendation they all tap first.</div></div>
+<div style="padding:34px clamp(20px,3.1cqw,40px) 40px"><div style="font:600 11px/1 'JetBrains Mono',monospace;color:#00a09a;margin-bottom:14px">HONEST ABOUT LIMITS</div><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">We don't do smart locks, messaging inboxes or dynamic pricing. We do the guidebook, properly.</div></div>
+</div>
+<div style="padding:clamp(44px,6cqw,78px) var(--gutter);background:#040509">
+<div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;margin-bottom:clamp(30px,4cqw,46px);gap:24px 40px">
+<div style="max-width:620px">
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#40dcd3;margin-bottom:16px">Whose brand is it</div>
+<h2 style="font:700 clamp(26px,3.2cqw,40px)/1.1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.022em;color:#fff;margin:0;text-wrap:pretty">Guests should see your name, not ours</h2>
+</div>
+<p style="font:400 15px/1.65 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.62);margin:0;max-width:340px">Every guidebook takes on the property's own identity — a boutique villa and a city studio shouldn't feel like the same template.</p>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:26px">
+<div style="border-radius:14px;overflow:hidden;background:#0e1014;border:1px solid rgba(255,255,255,.1)">
+<div style="height:112px;background:url(&quot;assets/img/brand-casa-olivo.jpg&quot;) center/cover"></div>
+<div style="padding:22px">
+<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><div style="width:26px;height:26px;border-radius:6px;background:#00a09a;display:grid;place-items:center;font:700 10px/1 'Plus Jakarta Sans',sans-serif;color:#fff">CO</div><span style="font:700 14px/1 'Plus Jakarta Sans',sans-serif;color:#fff">Casa Olivo</span></div>
+<p style="font:400 12.5px/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55);margin:0">A family-run collection of Mediterranean villas. Their guidebook covers arrival by car, pool safety, and the owners' own restaurant picks.</p>
+</div>
+</div>
+<div style="border-radius:14px;overflow:hidden;background:#0e1014;border:1px solid rgba(255,255,255,.1)">
+<div style="height:112px;background:url(&quot;assets/img/brand-loft-kreuzberg.jpg&quot;) center/cover"></div>
+<div style="padding:22px">
+<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><div style="width:26px;height:26px;border-radius:6px;background:#7a5cf0;display:grid;place-items:center;font:700 10px/1 'Plus Jakarta Sans',sans-serif;color:#fff">LK</div><span style="font:700 14px/1 'Plus Jakarta Sans',sans-serif;color:#fff">Loft Kreuzberg</span></div>
+<p style="font:400 12.5px/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55);margin:0">Twelve compact studios in Berlin. The guidebook focuses on self check-in, public transport, and quiet hours for the neighbours.</p>
+</div>
+</div>
+<div style="border-radius:14px;overflow:hidden;background:#0e1014;border:1px solid rgba(255,255,255,.1)">
+<div style="height:112px;background:url(&quot;assets/img/brand-harbour-stays.jpg&quot;) center/cover"></div>
+<div style="padding:22px">
+<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><div style="width:26px;height:26px;border-radius:6px;background:#c8a24a;display:grid;place-items:center;font:700 10px/1 'Plus Jakarta Sans',sans-serif;color:#040509">HS</div><span style="font:700 14px/1 'Plus Jakarta Sans',sans-serif;color:#fff">Harbour Stays</span></div>
+<p style="font:400 12.5px/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55);margin:0">Eight seafront apartments near the marina. Guests are guided from parking to their door, with tide times for the beach below.</p>
+</div>
+</div>
+</div>
+</div>
+
+<div style="padding:clamp(44px,6cqw,78px) var(--gutter);background:#fff;border-top:1px solid rgba(4,5,9,.07)">
+<div style="display:flex;flex-wrap:wrap;gap:32px 60px;align-items:center;justify-content:space-between">
+<div>
+<h2 style="font:700 clamp(28px,3.4cqw,42px)/1.08 'Plus Jakarta Sans',sans-serif;letter-spacing:-.026em;color:#040509;margin:0 0 16px;text-wrap:pretty">Ready to replace the binder?</h2>
+<p style="font:400 16px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0 0 28px;max-width:540px">Publish your first guidebook in around 15 minutes. It's free, forever — no card required.</p>
+<div data-cta="" style="display:flex;gap:13px;align-items:center">
+<a href="#" data-action="start" style="font:600 15px/1 'Plus Jakarta Sans',sans-serif;color:#fff;background:#00a09a;padding:16px 26px;border-radius:8px">Create your free guidebook</a>
+</div>
+</div>
+<div class="qr-only" data-action="example" role="button" tabindex="0" style="cursor:pointer;flex:none;width:190px;height:190px;border:1px solid rgba(4,5,9,.1);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;background:#fafafb">
+<img src="assets/img/qr-code.png" alt="Guidebook QR code" style="width:112px;height:112px;border-radius:4px">
+<div style="font:500 9px/1.4 'JetBrains Mono',monospace;text-align:center;color:#8b8f99">SCAN FOR A LIVE<br>GUEST GUIDEBOOK</div>
+</div>
+</div>
+</div>
+
+<div style="padding:clamp(26px,3.4cqw,44px) var(--gutter);background:#040509;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:30px 60px;border-top:1px solid rgba(255,255,255,.08)">
+<div><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:26px;width:auto;display:block;margin-bottom:14px"><div style="font:400 12.5px/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.45)">Digital guidebooks for busy hosts.</div></div>
+<div style="display:flex;flex-wrap:wrap;gap:26px 64px">
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">PRODUCT</span><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Guest guidebooks</a><a href="#/" data-scroll="moments" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Local recommendations</a><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Check-in &amp; house rules</a></div>
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">COMPANY</span><a href="#/pricing" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Pricing</a><a href="mailto:hello@getlost.me" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Contact</a><a href="#" data-action="privacy" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Privacy</a></div>
+</div>
+</div>
+</main>
+
+<main class="page" data-page="pricing" data-title="Pricing — GetLost" style="background:#fff" hidden>
+<nav data-nav-wrap><div data-nav="" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:20px var(--gutter);border-bottom:1px solid rgba(4,5,9,.08)">
+<div style="display:flex;align-items:center;gap:11px">
+<a href="#/" aria-label="GetLost home"><img src="assets/img/getlost-logo.png" alt="GetLost" style="height:28px;width:auto;display:block"></a>
+</div>
+<button type="button" data-mnav="" data-action="menu" aria-label="Open menu" style="display:none;order:9;align-items:center;justify-content:center;flex-direction:column;gap:4px;width:44px;height:44px;border:1px solid rgba(4,5,9,.14);border-radius:9px">
+<div style="width:17px;height:1.5px;background:#040509"></div><div style="width:17px;height:1.5px;background:#040509"></div><div style="width:17px;height:1.5px;background:#040509"></div>
+</button>
+<div data-dnav="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;font:500 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#3a3d45"><a href="#/features" data-link="Product">Product</a><a href="#/" data-link="For managers">For managers</a><a href="#/pricing" data-link="Pricing" style="color:#00a09a;font-weight:700">Pricing</a><a href="#/" data-scroll="moments" data-link="Guest experience">Guest experience</a></div>
+<div style="display:flex;align-items:center;gap:18px"><a href="#" data-action="signin" data-dnav="" style="font:600 13.5px/1 \'Plus Jakarta Sans\',sans-serif;color:#040509">Sign in</a><a href="#" data-action="start" style="font:600 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#fff;background:#040509;padding:11px 18px;border-radius:7px;white-space:nowrap" data-nav-cta="">Start for free</a></div>
+</div></nav>
+<div style="padding:clamp(40px,5cqw,66px) var(--gutter) 30px;text-align:center;background:linear-gradient(180deg,#fff,#f7f9f9)">
+<h1 style="font:700 clamp(30px,4cqw,50px)/1.06 'Plus Jakarta Sans',sans-serif;letter-spacing:-.028em;color:#040509;margin:0 0 14px">Free to start. Simple after that.</h1>
+<p style="font:400 clamp(15px,1.35cqw,17px)/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57;margin:0 auto 26px;max-width:560px">Your first guidebook is free, forever. Every one after that is billed individually — monthly, or yearly to save 25%.</p>
+<div role="tablist" aria-label="Billing period" class="billing-toggle" style="display:inline-flex;align-items:center;gap:4px;padding:4px;background:#eef1f1;border-radius:30px">
+<button type="button" role="tab" data-billing="monthly" aria-selected="false">Monthly</button>
+<button type="button" role="tab" data-billing="yearly" aria-selected="true">Yearly <em>save 25%</em></button>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;padding:26px max(var(--gutter),calc((100% - 820px) / 2)) clamp(40px,5cqw,60px);background:#f7f9f9;align-items:start">
+<div class="free-strip" style="grid-column:1/-1">
+<div class="free-strip-copy">
+<div class="free-k">YOUR FIRST GUIDEBOOK</div>
+<div class="free-strip-v">€0<span> — free, forever</span></div>
+<p>Publish one property free, with no card and no time limit. Only pay when you add a second.</p>
+</div>
+<a href="#" data-action="start" class="free-btn dark">Create your free guidebook</a>
+</div>
+
+<div data-plan-card="yearly" style="background:#040509;border-radius:14px;padding:32px 30px;position:relative;box-shadow:0 20px 44px rgba(4,5,9,.2)">
+<div style="position:absolute;top:-12px;right:22px;font:600 9px/1 'JetBrains Mono',monospace;letter-spacing:.12em;color:#040509;background:#40dcd3;padding:6px 9px;border-radius:4px">SAVE WITH YEARLY</div>
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:rgba(255,255,255,.5);margin-bottom:14px;margin-top:6px">YEARLY</div>
+<div style="font:700 21px/1.2 'Plus Jakarta Sans',sans-serif;color:#fff;margin-bottom:6px">Per guidebook</div>
+<p style="font:400 13px/1.55 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.6);margin:0 0 24px;min-height:40px">Billed once a year. The lower rate per guidebook, per month.</p>
+<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px"><span style="font:700 clamp(34px,3.6cqw,44px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#fff">€5.99</span><span style="font:500 14px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.6)">/mo</span></div>
+<div style="font:400 12px/1.4 'JetBrains Mono',monospace;color:rgba(255,255,255,.5);margin-bottom:26px">per extra guidebook · billed yearly</div>
+<a href="#" data-action="start" data-plan="yearly" style="font:600 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#040509;background:#40dcd3;padding:14px;border-radius:8px;text-align:center;margin-bottom:26px" class="block-btn">Start for free</a>
+<div style="display:flex;flex-direction:column;gap:11px">
+<div style="display:flex;gap:9px;align-items:flex-start"><div style="width:14px;height:14px;border-radius:50%;background:#40dcd3;flex:none;margin-top:2px"></div><span style="font:500 13px/1.45 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.86)">Check-in, WiFi, house rules and recommendations</span></div>
+<div style="display:flex;gap:9px;align-items:flex-start"><div style="width:14px;height:14px;border-radius:50%;background:#40dcd3;flex:none;margin-top:2px"></div><span style="font:500 13px/1.45 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.86)">One link or QR code, no app for guests</span></div>
+</div>
+</div>
+<div data-plan-card="monthly" style="background:#fff;border:1px solid rgba(4,5,9,.1);border-radius:14px;padding:32px 30px">
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.13em;color:#8b8f99;margin-bottom:14px">MONTHLY</div>
+<div style="font:700 21px/1.2 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:6px">Per guidebook</div>
+<p style="font:400 13px/1.55 'Plus Jakarta Sans',sans-serif;color:#6a6e77;margin:0 0 24px;min-height:40px">Billed every month. No commitment — cancel anytime.</p>
+<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px"><span style="font:700 clamp(34px,3.6cqw,44px)/1 'Plus Jakarta Sans',sans-serif;letter-spacing:-.03em;color:#040509">€7.99</span><span style="font:500 14px/1 'Plus Jakarta Sans',sans-serif;color:#6a6e77">/mo</span></div>
+<div style="font:400 12px/1.4 'JetBrains Mono',monospace;color:#8b8f99;margin-bottom:26px">per extra guidebook · billed monthly</div>
+<a href="#" data-action="start" data-plan="monthly" style="font:600 13.5px/1 'Plus Jakarta Sans',sans-serif;color:#040509;border:1.5px solid rgba(4,5,9,.16);padding:14px;border-radius:8px;text-align:center;margin-bottom:26px" class="block-btn">Start for free</a>
+<div style="display:flex;flex-direction:column;gap:11px">
+<div style="display:flex;gap:9px;align-items:flex-start"><div style="width:14px;height:14px;border-radius:50%;background:#00a09a;flex:none;margin-top:2px"></div><span style="font:500 13px/1.45 'Plus Jakarta Sans',sans-serif;color:#3a3d45">Check-in, WiFi, house rules and recommendations</span></div>
+<div style="display:flex;gap:9px;align-items:flex-start"><div style="width:14px;height:14px;border-radius:50%;background:#00a09a;flex:none;margin-top:2px"></div><span style="font:500 13px/1.45 'Plus Jakarta Sans',sans-serif;color:#3a3d45">One link or QR code, no app for guests</span></div>
+</div>
+</div>
+</div>
+<div class="calc" style="padding:clamp(40px,5cqw,64px) var(--gutter);background:#040509">
+<div style="max-width:980px;margin:0 auto">
+<div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px 40px;margin-bottom:34px">
+<div>
+<div style="font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:#40dcd3;margin-bottom:14px">PORTFOLIO CALCULATOR</div>
+<h2 style="font:800 clamp(26px,3.4cqw,42px)/1.05 'Plus Jakarta Sans',sans-serif;letter-spacing:-.035em;color:#fff;margin:0">What would it cost for your portfolio?</h2>
+</div>
+<p style="font:400 14px/1.6 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.55);margin:0;max-width:300px">Your first guidebook is free. After that, the same price per guidebook at any size — no tiers, no seat fees.</p>
+</div>
+<div class="calc-slider">
+<label for="calc-units"><span id="calc-units-out">12</span> guidebooks</label>
+<input id="calc-units" type="range" min="1" max="60" value="12" aria-describedby="calc-units-out">
+<div class="calc-scale"><span>1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>
+<div class="calc-split" id="calc-split">1 free + 11 paid</div>
+</div>
+<div class="calc-results">
+<div class="calc-tile" data-calc-plan="yearly"><div class="calc-k">YEARLY</div><div class="calc-v" id="calc-yearly">€71.88<small>/mo</small></div><div class="calc-sub" id="calc-yearly-sub">€862.56 billed once a year</div></div>
+<div class="calc-tile" data-calc-plan="monthly"><div class="calc-k">MONTHLY</div><div class="calc-v" id="calc-monthly">€95.88<small>/mo</small></div><div class="calc-sub" id="calc-monthly-sub">billed monthly · cancel anytime</div></div>
+<div class="calc-tile save"><div class="calc-k">YEARLY SAVES YOU</div><div class="calc-v" id="calc-save">€288<small>/yr</small></div><div class="calc-sub" id="calc-save-sub">€24 per paid guidebook, every year</div></div>
+</div>
+</div>
+</div>
+
+<div style="padding:clamp(38px,4.4cqw,56px) var(--gutter) clamp(44px,5.2cqw,66px);background:#fff;border-top:1px solid rgba(4,5,9,.07)">
+<h2 style="font:700 clamp(22px,2.5cqw,30px)/1.15 'Plus Jakarta Sans',sans-serif;letter-spacing:-.02em;color:#040509;margin:0 0 30px">The questions managers actually ask</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:22px 40px">
+<details class="faq" open><summary style="font:700 15px/1.35 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:8px">How is pricing calculated?</summary><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Your first guidebook is free, forever. Every guidebook after that is billed per month, and there's no limit on how many you publish.</div></details>
+<details class="faq" open><summary style="font:700 15px/1.35 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:8px">What's the difference between monthly and yearly?</summary><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">For each guidebook after your free one: yearly is €5.99 per month, paid upfront for the year. Monthly is €7.99, billed every month.</div></details>
+<details class="faq" open><summary style="font:700 15px/1.35 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:8px">Can I cancel anytime?</summary><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Monthly plans can be cancelled at any time. Yearly plans run for the year you've paid for.</div></details>
+<details class="faq" open><summary style="font:700 15px/1.35 'Plus Jakarta Sans',sans-serif;color:#040509;margin-bottom:8px">Why is it called GetLost?</summary><div style="font:400 13.5px/1.6 'Plus Jakarta Sans',sans-serif;color:#4a4e57">Because the good part of travel is wandering. The bad part is not knowing how the boiler works. We handle the second one.</div></details>
+</div>
+</div>
+<div style="padding:clamp(26px,3.4cqw,44px) var(--gutter);background:#040509;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:30px 60px;border-top:1px solid rgba(255,255,255,.08)">
+<div><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:26px;width:auto;display:block;margin-bottom:14px"><div style="font:400 12.5px/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.45)">Digital guidebooks for busy hosts.</div></div>
+<div style="display:flex;flex-wrap:wrap;gap:26px 64px">
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">PRODUCT</span><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Guest guidebooks</a><a href="#/" data-scroll="moments" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Local recommendations</a><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Check-in &amp; house rules</a></div>
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">COMPANY</span><a href="#/pricing" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Pricing</a><a href="mailto:hello@getlost.me" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Contact</a><a href="#" data-action="privacy" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Privacy</a></div>
+</div>
+</div>
+</main>
+
+<main class="page" data-page="guidebook" data-title="Sample guidebook — GetLost" style="background:#040509" hidden>
+<nav data-nav-wrap><div data-nav="" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 20px;padding:22px var(--gutter);position:relative;z-index:3">
+<div style="display:flex;align-items:center;gap:11px"><a href="#/" aria-label="GetLost home"><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:28px;width:auto;display:block"></a></div>
+<button type="button" data-mnav="" data-action="menu" aria-label="Open menu" style="display:none;order:9;align-items:center;justify-content:center;flex-direction:column;gap:4px;width:44px;height:44px;border:1px solid rgba(255,255,255,.24);border-radius:9px">
+<div style="width:17px;height:1.5px;background:#fff"></div><div style="width:17px;height:1.5px;background:#fff"></div><div style="width:17px;height:1.5px;background:#fff"></div>
+</button>
+<div data-dnav="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 28px;font:500 13px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.7)"><a href="#/features" data-link="Features">Features</a><a href="#/pricing" data-link="Pricing">Pricing</a><a href="#/guidebook" data-link="Live example">Live example</a></div>
+<div style="display:flex;align-items:center;gap:12px">
+<a href="#" data-action="signin" data-dnav="" style="font:600 13px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.8)">Sign in</a>
+<a href="#" data-action="start" data-nav-cta="" style="font:600 13px/1 'Plus Jakarta Sans',sans-serif;color:#040509;background:#40dcd3;padding:12px 18px;border-radius:40px;white-space:nowrap">Start for free</a>
+</div>
+</div></nav>
+<div class="gb-page">
+<div class="gb-grid">
+
+<div class="gb-intro">
+<div class="gb-eyebrow"><span></span>LIVE SAMPLE GUIDEBOOK</div>
+<h1>This is what your guests open.</h1>
+<p class="gb-lede">Villa Palm Breeze in Gran Canaria, hosted by Ilse. The house manual, her local picks on a live map, and SOS numbers one tap away. Go ahead, it's interactive.</p>
+
+<div class="gb-controls">
+<div class="gb-label">THINGS TO TRY</div>
+<div class="gb-try">
+<button type="button" data-try="copy"><i>⌘</i>Copy the WiFi password</button>
+<button type="button" data-try="arrival"><i>→</i>Read the arrival instructions</button>
+<button type="button" data-try="area"><i>◎</i>Browse Ilse's picks</button>
+<button type="button" data-try="tip"><i>✦</i>See her dinner tip</button>
+<button type="button" data-try="map"><i>⤢</i>Open the full map</button>
+<button type="button" data-try="sos"><i>!</i>Check the SOS numbers</button>
+</div>
+</div>
+
+<div class="gb-actions" data-cta="">
+<a href="#" data-action="start" class="gb-btn primary">Create your free guidebook</a>
+<a href="#" data-action="example" class="gb-btn ghost qr-only">Open it on your phone</a>
+</div>
+<p class="gb-note">Sample guidebook. Ratings, reviews and some photos are illustrative.</p>
+</div>
+
+<div class="gb-device">
+<div class="gb-phone">
+<div class="gb-notch"></div>
+<div class="gb-screen" id="gg-root"></div>
+</div>
+</div>
+
+</div>
+</div>
+
+<div style="padding:clamp(26px,3.4cqw,44px) var(--gutter);background:#040509;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:30px 60px;border-top:1px solid rgba(255,255,255,.08)">
+<div><img src="assets/img/getlost-logo-white.png" alt="GetLost" style="height:26px;width:auto;display:block;margin-bottom:14px"><div style="font:400 12.5px/1.5 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.45)">Digital guidebooks for busy hosts.</div></div>
+<div style="display:flex;flex-wrap:wrap;gap:26px 64px">
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">PRODUCT</span><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Guest guidebooks</a><a href="#/" data-scroll="moments" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Local recommendations</a><a href="#/features" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Check-in &amp; house rules</a></div>
+<div style="display:flex;flex-direction:column;gap:11px"><span style="font:600 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(255,255,255,.4);margin-bottom:4px">COMPANY</span><a href="#/pricing" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Pricing</a><a href="mailto:hello@getlost.me" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Contact</a><a href="#" data-action="privacy" style="font:500 12.5px/1 'Plus Jakarta Sans',sans-serif;color:rgba(255,255,255,.78)">Privacy</a></div>
+</div>
+</div>
+</main>
+
+<div class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-top">
+    <a href="#/"><img src="assets/img/getlost-logo-white.png" alt="GetLost"></a>
+    <button class="icon-btn" type="button" data-action="close-menu" aria-label="Close menu">×</button>
+  </div>
+  <nav>
+    <a href="#/">Home</a>
+    <a href="#/features">Features</a>
+    <a href="#/pricing">Pricing</a>
+    <a href="#/guidebook">Live example</a>
+  </nav>
+  <div class="drawer-cta">
+    <a href="#" data-action="signin" style="border:1.5px solid rgba(255,255,255,.3)">Sign in</a>
+    <a href="#" data-action="start" style="background:#40dcd3;color:#040509">Create your free guidebook</a>
+  </div>
+</div>
+
+<dialog id="start-dialog">
+  <div class="modal">
+    <button class="close" type="button" data-close aria-label="Close">×</button>
+    <form id="start-form" novalidate>
+      <div class="eyebrow">First guidebook free, forever</div>
+      <h3>Create your free guidebook</h3>
+      <p>Tell us where to send your workspace link. No card, no time limit — publish in about 15 minutes.</p>
+      <div class="field"><label for="f-email">Work email</label><input id="f-email" type="email" required placeholder="you@yourproperties.com" autocomplete="email"></div>
+      <div class="field"><label for="f-units">How many properties do you manage?</label>
+        <select id="f-units"><option>1</option><option>2–4</option><option selected>5–15</option><option>16–50</option><option>50+</option></select></div>
+      <div class="field"><span class="plan-label">Billing for extra guidebooks <em>(only if you add more)</em></span></div>
+      <div class="plan-pick" role="radiogroup" aria-label="Billing for extra guidebooks">
+        <label><input type="radio" name="plan" value="yearly" checked>Yearly<span>€5.99/mo per guidebook</span></label>
+        <label><input type="radio" name="plan" value="monthly">Monthly<span>€7.99/mo per guidebook</span></label>
+      </div>
+      <button class="submit" type="submit">Create my free guidebook</button>
+      <p class="fine">Prototype — nothing is sent anywhere.</p>
+    </form>
+    <div class="success" id="start-success" hidden>
+      <div class="tick">✓</div>
+      <h3>You're in.</h3>
+      <p id="start-success-msg">Check your inbox for a link to your new workspace.</p>
+      <button class="submit" type="button" data-close>Back to the site</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="signin-dialog">
+  <div class="modal">
+    <button class="close" type="button" data-close aria-label="Close">×</button>
+    <form id="signin-form" novalidate>
+      <div class="eyebrow">Welcome back</div>
+      <h3>Sign in</h3>
+      <p>We'll email you a one-time sign-in link.</p>
+      <div class="field"><label for="s-email">Email</label><input id="s-email" type="email" required placeholder="you@yourproperties.com" autocomplete="email"></div>
+      <button class="submit" type="submit">Email me a link</button>
+      <p class="fine">Prototype — nothing is sent anywhere.</p>
+    </form>
+    <div class="success" id="signin-success" hidden>
+      <div class="tick">✓</div>
+      <h3>Link sent.</h3>
+      <p>Open it on this device to get back to your guidebooks.</p>
+      <button class="submit" type="button" data-close>Done</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="example-dialog">
+  <div class="modal center">
+    <button class="close" type="button" data-close aria-label="Close">×</button>
+    <div class="eyebrow">Live guest guidebook</div>
+    <h3>Scan it with your phone.</h3>
+    <p>This is exactly what your guests would see, in ten seconds.</p>
+    <img class="qr-big" src="assets/img/qr-code.png" alt="QR code for a live guest guidebook">
+    <button class="submit" type="button" data-close>Close</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="assets/vendor/leaflet.js"></script>
+<script src="assets/js/guest-guide.js?v=3"></script>
+<script>
+(() => {
+  const pages = [...document.querySelectorAll('.page')];
+  const drawer = document.getElementById('drawer');
+  const toastEl = document.getElementById('toast');
+
+  // ---- Routing (#/, #/features, #/pricing)
+  function route(scrollTo) {
+    const [key0, sub] = location.hash.replace(/^#\/?/, '').split('/');
+    const key = key0 || 'home';
+    const page = pages.find(p => p.dataset.page === key) || pages[0];
+    pages.forEach(p => p.hidden = p !== page);
+    document.title = page.dataset.title;
+    document.querySelectorAll('[data-dnav] a, .drawer nav a').forEach(a => {
+      const target = (a.getAttribute('href') || '').replace(/^#\/?/, '') || 'home';
+      a.toggleAttribute('aria-current', target === key && !a.dataset.scroll);
+    });
+    closeMenu();
+    if (scrollTo) {
+      requestAnimationFrame(() => page.querySelector('#' + scrollTo)?.scrollIntoView({ behavior: 'smooth' }));
+    } else {
+      window.scrollTo(0, 0);
+    }
+    observeReveals(page);
+    if (key === 'guidebook') gb.showTab(sub);
+  }
+  window.addEventListener('hashchange', () => route());
+
+  // ---- Click delegation
+  document.addEventListener('click', e => {
+    const go = e.target.closest('[data-go]');
+    if (go) { location.hash = go.dataset.go; return; }
+    const el = e.target.closest('a, button');
+    if (!el) return;
+    if (el.dataset.skip) {
+      e.preventDefault();
+      const h = document.querySelector('.page:not([hidden]) h1, .page:not([hidden]) h2');
+      if (h) { h.tabIndex = -1; h.focus(); }
+      return;
+    }
+    const action = el.dataset.action;
+    if (el.dataset.scroll) {
+      e.preventDefault();
+      if (location.hash !== '#/' && location.hash !== '' ) history.pushState(null, '', '#/');
+      route(el.dataset.scroll);
+      return;
+    }
+    if (!action) return;
+    e.preventDefault();
+    if (action === 'menu') openMenu();
+    else if (action === 'close-menu') closeMenu();
+    else if (action === 'start') openStart(el.dataset.plan || currentBilling);
+    else if (action === 'signin') openDialog('signin-dialog');
+    else if (action === 'example') { if (isPhone()) location.hash = '#/guidebook'; else openDialog('example-dialog'); }
+    else if (action === 'privacy') toast('Privacy policy page is not part of this design yet.');
+  });
+
+  const isPhone = () => matchMedia('(max-width:640px)').matches;
+
+  // ---- Mobile menu
+  function openMenu() { drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); document.body.style.overflow = 'hidden'; }
+  function closeMenu() { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); document.body.style.overflow = ''; }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeMenu();
+    const go = e.target.closest?.('[data-go]');
+    if (go && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); location.hash = go.dataset.go; }
+    const btn = e.target.closest?.('[role="button"][data-action]');
+    if (btn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); btn.click(); }
+  });
+
+  // ---- Dialogs
+  function openDialog(id) {
+    closeMenu();
+    const d = document.getElementById(id);
+    d.querySelectorAll('form').forEach(f => { f.hidden = false; f.reset?.(); });
+    d.querySelectorAll('.success').forEach(s => s.hidden = true);
+    d.showModal();
+  }
+  function openStart(plan) {
+    openDialog('start-dialog');
+    const r = document.querySelector(`#start-form input[value="${plan}"]`);
+    if (r) r.checked = true;
+    setTimeout(() => document.getElementById('f-email').focus(), 50);
+  }
+  document.querySelectorAll('dialog').forEach(d => {
+    d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); });
+  });
+  function handleForm(formId, inputId, successId, onSuccess) {
+    const form = document.getElementById(formId);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const input = document.getElementById(inputId);
+      if (!input.checkValidity() || !input.value.trim()) {
+        input.focus(); input.style.borderColor = '#e0475b';
+        toast('Please enter a valid email address.');
+        return;
+      }
+      input.style.borderColor = '';
+      onSuccess?.(input.value.trim());
+      form.hidden = true;
+      document.getElementById(successId).hidden = false;
+    });
+  }
+  handleForm('start-form', 'f-email', 'start-success', email => {
+    const plan = document.querySelector('#start-form input[name=plan]:checked').value;
+    const units = document.getElementById('f-units').value;
+    document.getElementById('start-success-msg').textContent =
+      `We've sent a workspace link to ${email}. Your first guidebook is free; extra ones would be billed ${plan} — change that anytime.`;
+  });
+  handleForm('signin-form', 's-email', 'signin-success');
+
+  // ---- Pricing billing toggle
+  let currentBilling = 'yearly';
+  function setBilling(b) {
+    currentBilling = b;
+    document.querySelectorAll('[data-billing]').forEach(btn => btn.setAttribute('aria-selected', btn.dataset.billing === b));
+    document.querySelectorAll('[data-plan-card]').forEach(card => {
+      card.classList.toggle('dim', card.dataset.planCard !== b);
+      card.classList.toggle('active', card.dataset.planCard === b);
+    });
+    document.querySelectorAll('[data-calc-plan]').forEach(t => t.classList.toggle('active', t.dataset.calcPlan === b));
+  }
+  document.querySelectorAll('[data-billing]').forEach(btn => btn.addEventListener('click', () => setBilling(btn.dataset.billing)));
+  document.querySelectorAll('[data-plan-card]').forEach(card => card.addEventListener('click', e => {
+    if (!e.target.closest('[data-action]')) setBilling(card.dataset.planCard);
+  }));
+  setBilling('yearly');
+
+
+  // ---- Pricing calculator (flat per-guidebook pricing, no volume tiers)
+  const eur = n => '€' + n.toLocaleString('en-IE', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  const units = document.getElementById('calc-units');
+  function calc() {
+    const n = +units.value, paid = n - 1;
+    document.getElementById('calc-units-out').textContent = n;
+    document.querySelector('label[for="calc-units"]').lastChild.textContent = n === 1 ? ' guidebook' : ' guidebooks';
+    document.getElementById('calc-split').textContent = paid ? `1 free + ${paid} paid` : 'Your first one is free, forever';
+    document.getElementById('calc-yearly').innerHTML = eur(+(paid * 5.99).toFixed(2)) + '<small>/mo</small>';
+    document.getElementById('calc-yearly-sub').textContent = paid ? eur(+(paid * 5.99 * 12).toFixed(2)) + ' billed once a year' : 'free, forever';
+    document.getElementById('calc-monthly').innerHTML = eur(+(paid * 7.99).toFixed(2)) + '<small>/mo</small>';
+    document.getElementById('calc-monthly-sub').textContent = paid ? 'billed monthly · cancel anytime' : 'free, forever';
+    document.getElementById('calc-save').innerHTML = eur(paid * 24) + '<small>/yr</small>';
+    document.getElementById('calc-save-sub').textContent = paid ? '€24 per paid guidebook, every year' : 'nothing to save — it\'s free';
+  }
+  units?.addEventListener('input', calc);
+  document.querySelectorAll('[data-calc-plan]').forEach(t => t.addEventListener('click', () => setBilling(t.dataset.calcPlan)));
+  if (units) { calc(); setBilling(currentBilling); }
+
+  // ---- Sample guidebook (Guest Guide design)
+  const gb = (() => {
+    const root = document.getElementById('gg-root');
+    if (!root || !window.GuestGuide) return { showTab() {} };
+    const guide = GuestGuide.mount(root, { theme: 'dark', onNote: msg => toast('In a real guidebook: ' + msg.charAt(0).toLowerCase() + msg.slice(1)) });
+    const tries = {
+      copy: () => { guide.go('house'); setTimeout(() => root.querySelector('[data-gg="copy"]')?.click(), 60); },
+      arrival: () => guide.go('arrival'),
+      area: () => guide.go('area'),
+      tip: () => guide.set({ tab: 'area', sel: 1, map: false, det: null, sos: false }),
+      map: () => guide.set({ map: true, det: null, sos: false }),
+      sos: () => guide.set({ sos: true })
+    };
+    document.querySelectorAll('[data-try]').forEach(b => b.addEventListener('click', () => {
+      tries[b.dataset.try]();
+      if (matchMedia('(max-width:820px)').matches) root.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
+    return { showTab(sub) { setTimeout(() => { guide.ready(); if (sub) guide.go(sub); }, 0); } };
+  })();
+
+  // ---- Sticky nav shading
+  const onScroll = () => document.querySelectorAll('nav[data-nav-wrap]').forEach(n => n.classList.toggle('scrolled', scrollY > 20));
+  addEventListener('scroll', onScroll, { passive: true });
+
+  // ---- Reveal on scroll
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+    entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 }) : null;
+  function observeReveals(page) {
+    if (!io) return;
+    page.querySelectorAll(':scope > div:not(:first-of-type) h2, [data-moments] > div, [data-steps] > div, [data-plan-card], details.faq')
+      .forEach(el => { if (!el.classList.contains('in')) { el.classList.add('reveal'); io.observe(el); } });
+  }
+
+  // ---- Toast
+  let toastTimer;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+  }
+
+  route();
+})();
+</script>
+</body>
+</html>
