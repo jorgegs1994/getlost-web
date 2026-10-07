@@ -94,7 +94,8 @@ footer a:hover,.page a[style*="12.5px"]:hover{color:#fff !important}
 .billing-toggle button[aria-selected="true"]{color:var(--ink);background:#fff;box-shadow:0 1px 3px rgba(4,5,9,.12)}
 .billing-toggle em{font-style:normal;font:600 9.5px/1 'JetBrains Mono',monospace;color:var(--teal-deep);margin-left:4px}
 [data-plan-card]{transition:opacity .3s,transform .3s,box-shadow .3s}
-.page [data-plan-card].dim{opacity:.6;transform:scale(.97)}
+.page [data-plan-card].dim{opacity:.6}
+@container (max-width:620px){[data-plans]{grid-template-columns:1fr !important}}
 .page [data-plan-card="monthly"].active{box-shadow:0 0 0 2px var(--teal),0 20px 44px rgba(4,5,9,.14)}
 details.faq{border-top:1px solid rgba(4,5,9,.1);padding-top:18px}
 details.faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
@@ -514,7 +515,7 @@ html{scroll-behavior:auto}
 <button type="button" role="tab" data-billing="yearly" aria-selected="true">Yearly <em>save 25%</em></button>
 </div>
 </div>
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;padding:26px max(var(--gutter),calc((100% - 820px) / 2)) clamp(40px,5cqw,60px);background:#f7f9f9;align-items:start">
+<div data-plans="" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;padding:26px max(var(--gutter),calc((100% - 820px) / 2)) clamp(40px,5cqw,60px);background:#f7f9f9;align-items:stretch">
 <div class="free-strip" style="grid-column:1/-1">
 <div class="free-strip-copy">
 <div class="free-k">YOUR FIRST GUIDEBOOK</div>
